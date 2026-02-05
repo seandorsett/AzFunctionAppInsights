@@ -6,7 +6,7 @@
       "value": "aquarium-health-monitor"
     },
     "deploymentRegion": {
-      "value": "eastus"
+      "value": "westus2"
     }
   }
 }

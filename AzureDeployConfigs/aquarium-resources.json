@@ -10,7 +10,7 @@
     },
     "deploymentRegion": {
       "type": "string",
-      "defaultValue": "eastus",
+      "defaultValue": "westus2",
       "metadata": {
         "description": "Azure region for resource deployment"
       }
