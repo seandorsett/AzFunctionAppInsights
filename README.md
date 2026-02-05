@@ -52,7 +52,7 @@ curl -X POST "https://your-function-app.azurewebsites.net/api/aquarium/analyze?t
 ### Local Development
 
 1. **Prerequisites:**
-   - .NET 6.0 SDK
+   - .NET 8.0 SDK
    - Azure Functions Core Tools
    - Azure Storage Emulator or Azurite
 

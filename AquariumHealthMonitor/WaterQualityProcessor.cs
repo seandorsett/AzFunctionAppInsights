@@ -12,12 +12,7 @@ namespace AquariumHealthMonitor
 {
     public static class WaterQualityProcessor
     {
-        private const double MIN_SAFE_PH = 6.5;
-        private const double MAX_SAFE_PH = 8.5;
-        private const double MIN_TEMP_CELSIUS = 22.0;
-        private const double MAX_TEMP_CELSIUS = 28.0;
-        private const double AMMONIA_THRESHOLD_PPM = 0.5;
-        private const int HIGH_POPULATION_THRESHOLD = 50;
+        private static readonly AnalysisThresholds Thresholds = new AnalysisThresholds();
 
         [FunctionName("ProcessAquariumMetrics")]
         public static async Task<IActionResult> ExecuteWaterQualityAnalysis(
@@ -38,38 +33,52 @@ namespace AquariumHealthMonitor
 
             try
             {
-                dynamic metricsPayload = JsonConvert.DeserializeObject(requestBody);
+                var metricsPayload = JsonConvert.DeserializeObject<TankMetricsPayload>(requestBody);
                 
-                double phLevel = metricsPayload?.phValue ?? 0.0;
-                double temperatureCelsius = metricsPayload?.tempCelsius ?? 0.0;
-                double ammoniaPartsPerMillion = metricsPayload?.ammoniaPPM ?? 0.0;
-                int fishPopulation = metricsPayload?.fishCount ?? 0;
-
-                metricsLogger.LogInformation($"Tank {tankIdentifier} readings - pH: {phLevel}, Temperature: {temperatureCelsius}°C, Ammonia: {ammoniaPartsPerMillion}ppm, Fish: {fishPopulation}");
-
-                bool hasWarnings = false;
-
-                if (phLevel < MIN_SAFE_PH || phLevel > MAX_SAFE_PH)
+                if (metricsPayload == null)
                 {
-                    metricsLogger.LogWarning($"CRITICAL: Tank {tankIdentifier} pH level out of safe range: {phLevel} (safe range: {MIN_SAFE_PH}-{MAX_SAFE_PH})");
-                    hasWarnings = true;
+                    metricsLogger.LogWarning($"Could not deserialize metrics for tank: {tankIdentifier}");
+                    return new BadRequestObjectResult("Invalid JSON structure");
                 }
 
-                if (temperatureCelsius < MIN_TEMP_CELSIUS || temperatureCelsius > MAX_TEMP_CELSIUS)
+                var validationResult = metricsPayload.ValidateCompleteness();
+                if (!validationResult.IsValid)
                 {
-                    metricsLogger.LogWarning($"CRITICAL: Tank {tankIdentifier} temperature unsafe: {temperatureCelsius}°C (safe range: {MIN_TEMP_CELSIUS}-{MAX_TEMP_CELSIUS}°C)");
-                    hasWarnings = true;
+                    string missingFieldsList = string.Join(", ", validationResult.MissingOrInvalidFields);
+                    metricsLogger.LogWarning($"Tank {tankIdentifier} metrics incomplete or invalid. Missing/invalid fields: {missingFieldsList}");
+                    return new BadRequestObjectResult($"Required fields missing or invalid: {missingFieldsList}");
                 }
 
-                if (ammoniaPartsPerMillion > AMMONIA_THRESHOLD_PPM)
+                double phReading = metricsPayload.phValue.Value;
+                double temperatureReading = metricsPayload.tempCelsius.Value;
+                double ammoniaMeasurement = metricsPayload.ammoniaPPM.Value;
+                int populationCount = metricsPayload.fishCount.Value;
+
+                metricsLogger.LogInformation($"Tank {tankIdentifier} readings - pH: {phReading}, Temperature: {temperatureReading}°C, Ammonia: {ammoniaMeasurement}ppm, Fish: {populationCount}");
+
+                bool concernsDetected = false;
+
+                if (phReading < Thresholds.MinAcceptablePH || phReading > Thresholds.MaxAcceptablePH)
                 {
-                    metricsLogger.LogWarning($"ALERT: Tank {tankIdentifier} ammonia levels elevated at {ammoniaPartsPerMillion}ppm (threshold: {AMMONIA_THRESHOLD_PPM}ppm)");
-                    hasWarnings = true;
+                    metricsLogger.LogWarning($"CRITICAL: Tank {tankIdentifier} pH level out of safe range: {phReading} (safe range: {Thresholds.MinAcceptablePH}-{Thresholds.MaxAcceptablePH})");
+                    concernsDetected = true;
                 }
 
-                if (fishPopulation > HIGH_POPULATION_THRESHOLD)
+                if (temperatureReading < Thresholds.MinSafeTemperature || temperatureReading > Thresholds.MaxSafeTemperature)
                 {
-                    metricsLogger.LogInformation($"Tank {tankIdentifier} has high population density with {fishPopulation} fish (threshold: {HIGH_POPULATION_THRESHOLD})");
+                    metricsLogger.LogWarning($"CRITICAL: Tank {tankIdentifier} temperature unsafe: {temperatureReading}°C (safe range: {Thresholds.MinSafeTemperature}-{Thresholds.MaxSafeTemperature}°C)");
+                    concernsDetected = true;
+                }
+
+                if (ammoniaMeasurement > Thresholds.AmmoniaDangerLevel)
+                {
+                    metricsLogger.LogWarning($"ALERT: Tank {tankIdentifier} ammonia levels elevated at {ammoniaMeasurement}ppm (threshold: {Thresholds.AmmoniaDangerLevel}ppm)");
+                    concernsDetected = true;
+                }
+
+                if (populationCount > Thresholds.OvercrowdingThreshold)
+                {
+                    metricsLogger.LogInformation($"Tank {tankIdentifier} has high population density with {populationCount} fish (threshold: {Thresholds.OvercrowdingThreshold})");
                 }
 
                 var analysisResult = new
@@ -77,14 +86,14 @@ namespace AquariumHealthMonitor
                     status = "analysis_complete",
                     tankId = tankIdentifier,
                     evaluationTimestamp = DateTime.UtcNow,
-                    healthStatus = hasWarnings ? "requires_attention" : "optimal",
-                    warningsDetected = hasWarnings,
+                    healthStatus = concernsDetected ? "requires_attention" : "optimal",
+                    warningsDetected = concernsDetected,
                     metricsProcessed = new
                     {
-                        ph = phLevel,
-                        temperature = temperatureCelsius,
-                        ammonia = ammoniaPartsPerMillion,
-                        population = fishPopulation
+                        ph = phReading,
+                        temperature = temperatureReading,
+                        ammonia = ammoniaMeasurement,
+                        population = populationCount
                     }
                 };
 
