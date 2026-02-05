@@ -17,7 +17,7 @@
     }
   },
   "variables": {
-    "storageAccountName": "[concat('aquariumstor', uniqueString(resourceGroup().id))]",
+    "storageAccountName": "[concat('aqstor', uniqueString(resourceGroup().id))]",
     "appInsightsName": "[concat(parameters('uniqueAppName'), '-insights')]",
     "functionAppName": "[parameters('uniqueAppName')]",
     "hostingPlanName": "[concat(parameters('uniqueAppName'), '-plan')]"
